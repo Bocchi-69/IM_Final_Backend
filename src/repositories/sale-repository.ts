@@ -1,0 +1,227 @@
+import { eq, and, gte, lte, inArray, desc, sql } from "drizzle-orm";
+import { db } from "@/db";
+import { sales, saleItems, products, stockMovements } from "@/db/schema";
+
+export class SaleRepository {
+  async recordSale(
+    userId: number,
+    storeId: number,
+    shiftId: number,
+    itemsInput: { product_id: number; quantity: number }[]
+  ) {
+    // Group quantities by product_id
+    const wantedMap = new Map<number, number>();
+    for (const it of itemsInput) {
+      wantedMap.set(it.product_id, (wantedMap.get(it.product_id) || 0) + it.quantity);
+    }
+    const productIds = Array.from(wantedMap.keys());
+
+    return await db.transaction(async (tx) => {
+      // 1. Fetch products with row-level lock (FOR UPDATE) to prevent concurrency race conditions
+      const prodRows = await tx
+        .select()
+        .from(products)
+        .where(and(eq(products.storeId, storeId), inArray(products.id, productIds)))
+        .for("update");
+
+      const prodMap = new Map(prodRows.map((p) => [p.id, p]));
+
+      // 2. Validate stock for each product
+      for (const [pId, qty] of wantedMap.entries()) {
+        const prod = prodMap.get(pId);
+        if (!prod) {
+          throw new Error("Unknown product in cart.");
+        }
+        if (prod.stock < qty) {
+          throw new Error(`Only ${prod.stock} ${prod.name} in stock.`);
+        }
+      }
+
+      // 3. Insert sale
+      const [newSale] = await tx
+        .insert(sales)
+        .values({
+          storeId,
+          shiftId,
+          userId,
+          total: "0",
+          soldAt: new Date().toISOString(),
+        })
+        .returning();
+
+      let grandTotal = 0;
+      const insertedItems = [];
+
+      // 4. Decrement stock, create sale item, create stock movement
+      for (const [pId, qty] of wantedMap.entries()) {
+        const prod = prodMap.get(pId)!;
+        const unitPrice = parseFloat(prod.price);
+        const subtotal = unitPrice * qty;
+        grandTotal += subtotal;
+
+        // Decrement product stock atomically
+        await tx
+          .update(products)
+          .set({
+            stock: sql`${products.stock} - ${qty}`,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(and(eq(products.id, pId), eq(products.storeId, storeId)));
+
+        // Create sale item
+        const [saleItem] = await tx
+          .insert(saleItems)
+          .values({
+            saleId: newSale.id,
+            productId: pId,
+            productName: prod.name,
+            sku: prod.sku,
+            unitPrice: String(unitPrice),
+            quantity: qty,
+            subtotal: String(subtotal),
+          })
+          .returning();
+
+        insertedItems.push({
+          id: saleItem.id,
+          sale_id: saleItem.saleId,
+          product_id: saleItem.productId,
+          product_name: saleItem.productName,
+          sku: saleItem.sku,
+          unit_price: parseFloat(saleItem.unitPrice),
+          quantity: saleItem.quantity,
+          subtotal: parseFloat(saleItem.subtotal),
+        });
+
+        // Create stock movement
+        await tx.insert(stockMovements).values({
+          storeId,
+          productId: pId,
+          userId,
+          type: "sale",
+          quantity: -qty,
+          note: `Sale #${newSale.id}`,
+        });
+      }
+
+      // 5. Update sale total
+      const [updatedSale] = await tx
+        .update(sales)
+        .set({ total: String(grandTotal) })
+        .where(eq(sales.id, newSale.id))
+        .returning();
+
+      return {
+        id: updatedSale.id,
+        store_id: updatedSale.storeId,
+        shift_id: updatedSale.shiftId,
+        user_id: updatedSale.userId,
+        total: parseFloat(updatedSale.total),
+        sold_at: updatedSale.soldAt,
+        items: insertedItems,
+      };
+    });
+  }
+
+  async getSalesSince(storeId: number, sinceDate: Date) {
+    const saleRows = await db
+      .select()
+      .from(sales)
+      .where(and(eq(sales.storeId, storeId), gte(sales.soldAt, sinceDate.toISOString())));
+
+    if (saleRows.length === 0) return [];
+
+    const saleIds = saleRows.map((s) => s.id);
+    const itemRows = await db
+      .select()
+      .from(saleItems)
+      .where(inArray(saleItems.saleId, saleIds));
+
+    const itemsBySale = new Map<number, any[]>();
+    for (const item of itemRows) {
+      const list = itemsBySale.get(item.saleId) || [];
+      list.push({
+        id: item.id,
+        product_id: item.productId,
+        product_name: item.productName,
+        sku: item.sku,
+        unit_price: parseFloat(item.unitPrice),
+        quantity: item.quantity,
+        subtotal: parseFloat(item.subtotal),
+      });
+      itemsBySale.set(item.saleId, list);
+    }
+
+    return saleRows.map((s) => ({
+      id: s.id,
+      store_id: s.storeId,
+      shift_id: s.shiftId,
+      user_id: s.userId,
+      total: parseFloat(s.total),
+      sold_at: s.soldAt,
+      items: itemsBySale.get(s.id) || [],
+    }));
+  }
+
+  async getSalesBetween(storeId: number, start: Date, end: Date) {
+    const saleRows = await db
+      .select()
+      .from(sales)
+      .where(
+        and(
+          eq(sales.storeId, storeId),
+          gte(sales.soldAt, start.toISOString()),
+          lte(sales.soldAt, end.toISOString())
+        )
+      );
+
+    if (saleRows.length === 0) return [];
+
+    const saleIds = saleRows.map((s) => s.id);
+    const itemRows = await db
+      .select()
+      .from(saleItems)
+      .where(inArray(saleItems.saleId, saleIds));
+
+    const itemsBySale = new Map<number, any[]>();
+    for (const item of itemRows) {
+      const list = itemsBySale.get(item.saleId) || [];
+      list.push({
+        id: item.id,
+        product_id: item.productId,
+        product_name: item.productName,
+        quantity: item.quantity,
+        subtotal: parseFloat(item.subtotal),
+      });
+      itemsBySale.set(item.saleId, list);
+    }
+
+    return saleRows.map((s) => ({
+      id: s.id,
+      total: parseFloat(s.total),
+      sold_at: s.soldAt,
+      items: itemsBySale.get(s.id) || [],
+    }));
+  }
+
+  async getTopProducts(storeId: number, fromDate: Date, limit = 5) {
+    const rows = await db
+      .select({
+        name: saleItems.productName,
+        qty: sql<number>`SUM(${saleItems.quantity})`,
+        amount: sql<number>`SUM(${saleItems.subtotal})`,
+      })
+      .from(saleItems)
+      .innerJoin(sales, eq(saleItems.saleId, sales.id))
+      .where(and(eq(sales.storeId, storeId), gte(sales.soldAt, fromDate.toISOString())))
+      .groupBy(saleItems.productName)
+      .orderBy(desc(sql`SUM(${saleItems.subtotal})`))
+      .limit(limit);
+
+    return rows.map((r) => ({
+      name: r.name,
+      qty: parseInt(String(r.qty), 10),
+      amount: parseFloat(String(r.amount)),
+    }));
+  }
+}
