@@ -20,7 +20,7 @@ export async function getCurrentShiftService(userId: number, storeId: number, ro
       };
     }
 
-    const stats = await shiftRepo.getShiftStats(shift.id);
+    const stats = await shiftRepo.getShiftStats(shift.id, shift.storeId, shift.started_at);
     const recentSales = await shiftRepo.getRecentSales(shift.id, 10);
 
     const shiftPayload = {
@@ -30,6 +30,7 @@ export async function getCurrentShiftService(userId: number, storeId: number, ro
       user: shift.user,
       total: stats.total,
       sales_count: stats.sales_count,
+      cash_drops_total: stats.cash_drops_total,
       recent_sales: recentSales,
     };
 

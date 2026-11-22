@@ -1,6 +1,6 @@
-import { eq, and, isNull, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, isNull, desc, inArray, sql, gte } from "drizzle-orm";
 import { db } from "@/db";
-import { shifts, sales, saleItems, users } from "@/db/schema";
+import { shifts, sales, saleItems, users, cashDrops } from "@/db/schema";
 
 export class ShiftRepository {
   async findActiveShift(userId: number, storeId: number) {
@@ -46,7 +46,7 @@ export class ShiftRepository {
     return shift || null;
   }
 
-  async getShiftStats(shiftId: number) {
+  async getShiftStats(shiftId: number, storeId?: number, shiftStartedAt?: string) {
     const [result] = await db
       .select({
         total: sql<number>`COALESCE(SUM(${sales.total}), 0)`,
@@ -55,9 +55,21 @@ export class ShiftRepository {
       .from(sales)
       .where(eq(sales.shiftId, shiftId));
 
+    let cashDropsTotal = 0;
+    if (storeId && shiftStartedAt) {
+      const [dropsResult] = await db
+        .select({
+          total: sql<number>`COALESCE(SUM(${cashDrops.amount}), 0)`,
+        })
+        .from(cashDrops)
+        .where(and(eq(cashDrops.storeId, storeId), gte(cashDrops.createdAt, shiftStartedAt)));
+      cashDropsTotal = parseFloat(String(dropsResult?.total || 0));
+    }
+
     return {
       total: parseFloat(String(result?.total || 0)),
       sales_count: parseInt(String(result?.count || 0), 10),
+      cash_drops_total: cashDropsTotal,
     };
   }
 
@@ -89,7 +101,7 @@ export class ShiftRepository {
       time: s.soldAt,
       total: parseFloat(s.total),
       type: "Cash",
-      items: (itemsBySale.get(s.id) || []).join(", "),
+      items: (itemsBySale.get(s.id) || []).join(", ") || "POS Sale",
     }));
   }
 

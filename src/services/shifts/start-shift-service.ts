@@ -5,7 +5,7 @@ export async function startShiftService(userId: number, storeId: number) {
 
   try {
     const shift = await shiftRepo.startShift(userId, storeId);
-    const stats = await shiftRepo.getShiftStats(shift.id);
+    const stats = await shiftRepo.getShiftStats(shift.id, shift.storeId, shift.started_at);
 
     const shiftPayload = {
       id: shift.id,
@@ -14,6 +14,8 @@ export async function startShiftService(userId: number, storeId: number) {
       user: shift.user,
       total: stats.total,
       sales_count: stats.sales_count,
+      cash_drops_total: stats.cash_drops_total,
+      recent_sales: [],
     };
 
     return {

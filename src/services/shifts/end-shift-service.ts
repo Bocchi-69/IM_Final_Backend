@@ -15,7 +15,7 @@ export async function endShiftService(userId: number, storeId: number, role: str
     }
 
     const updated = await shiftRepo.endShift(shift.id);
-    const stats = await shiftRepo.getShiftStats(shift.id);
+    const stats = await shiftRepo.getShiftStats(shift.id, shift.storeId, shift.started_at);
 
     const shiftPayload = {
       id: updated.id,
@@ -24,6 +24,7 @@ export async function endShiftService(userId: number, storeId: number, role: str
       user: shift.user,
       total: stats.total,
       sales_count: stats.sales_count,
+      cash_drops_total: stats.cash_drops_total,
     };
 
     return {

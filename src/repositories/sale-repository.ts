@@ -47,7 +47,7 @@ export class SaleRepository {
         );
       }
 
-      // 3. Insert sale
+      // 3. Insert sale with pre-calculated grandTotal
       const [newSale] = await tx
         .insert(sales)
         .values({
@@ -66,7 +66,6 @@ export class SaleRepository {
         const prod = prodMap.get(pId)!;
         const unitPrice = parseFloat(prod.price);
         const subtotal = unitPrice * qty;
-        grandTotal += subtotal;
 
         // Decrement product stock atomically
         await tx
@@ -113,20 +112,13 @@ export class SaleRepository {
         });
       }
 
-      // 5. Update sale total
-      const [updatedSale] = await tx
-        .update(sales)
-        .set({ total: String(grandTotal) })
-        .where(eq(sales.id, newSale.id))
-        .returning();
-
       return {
-        id: updatedSale.id,
-        store_id: updatedSale.storeId,
-        shift_id: updatedSale.shiftId,
-        user_id: updatedSale.userId,
-        total: parseFloat(updatedSale.total),
-        sold_at: updatedSale.soldAt,
+        id: newSale.id,
+        store_id: newSale.storeId,
+        shift_id: newSale.shiftId,
+        user_id: newSale.userId,
+        total: grandTotal,
+        sold_at: newSale.soldAt,
         items: insertedItems,
       };
     });
