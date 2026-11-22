@@ -30,7 +30,7 @@ if (isProduction && (!process.env.JWT_SECRET || process.env.JWT_SECRET === "fall
 
 export const ENV = {
   APP_NAME: process.env.APP_NAME || "Stockify POS API",
-  PORT: parseInt(process.env.PORT || "3001", 10),
+  PORT: parseInt(process.env.PORT || (process.env.NODE_ENV === "production" ? "10000" : "3001"), 10),
   NODE_ENV: process.env.NODE_ENV || "development",
   JWT_SECRET: process.env.JWT_SECRET || "fallback_secret_change_me",
   FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:3000",
