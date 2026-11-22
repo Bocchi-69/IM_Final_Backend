@@ -16,7 +16,13 @@ export async function recordSaleService(
       return { code: 422, status: "error", message: "Start a shift before recording sales." };
     }
 
-    const sale = await saleRepo.recordSale(userId, storeId, shift.id, input.items);
+    const sale = await saleRepo.recordSale(
+      userId,
+      storeId,
+      shift.id,
+      input.items,
+      input.cash_received !== undefined ? Number(input.cash_received) : undefined
+    );
 
     return {
       code: 201,
@@ -26,12 +32,19 @@ export async function recordSaleService(
       data: { sale },
     };
   } catch (error: any) {
-    if (error.message?.includes("Only ") || error.message?.includes("Unknown product")) {
+    if (
+      error.message?.includes("Only ") ||
+      error.message?.includes("Unknown product") ||
+      error.message?.includes("Insufficient cash")
+    ) {
       return {
         code: 422,
         status: "error",
         message: error.message,
-        errors: { items: [error.message] },
+        errors: {
+          items: error.message?.includes("Insufficient cash") ? [] : [error.message],
+          cash_received: error.message?.includes("Insufficient cash") ? [error.message] : [],
+        },
       };
     }
     console.error("recordSaleService Error:", error);

@@ -7,7 +7,8 @@ export class SaleRepository {
     userId: number,
     storeId: number,
     shiftId: number,
-    itemsInput: { product_id: number; quantity: number }[]
+    itemsInput: { product_id: number; quantity: number }[],
+    cashReceived?: number
   ) {
     // Group quantities by product_id
     const wantedMap = new Map<number, number>();
@@ -26,7 +27,8 @@ export class SaleRepository {
 
       const prodMap = new Map(prodRows.map((p) => [p.id, p]));
 
-      // 2. Validate stock for each product
+      // 2. Validate stock and pre-calculate total
+      let grandTotal = 0;
       for (const [pId, qty] of wantedMap.entries()) {
         const prod = prodMap.get(pId);
         if (!prod) {
@@ -35,6 +37,14 @@ export class SaleRepository {
         if (prod.stock < qty) {
           throw new Error(`Only ${prod.stock} ${prod.name} in stock.`);
         }
+        grandTotal += parseFloat(prod.price) * qty;
+      }
+
+      // Validate cash tendered against grand total if provided
+      if (cashReceived !== undefined && cashReceived < grandTotal) {
+        throw new Error(
+          `Insufficient cash received (₱${cashReceived.toFixed(2)}). Total amount due is ₱${grandTotal.toFixed(2)}.`
+        );
       }
 
       // 3. Insert sale
@@ -44,12 +54,11 @@ export class SaleRepository {
           storeId,
           shiftId,
           userId,
-          total: "0",
+          total: String(grandTotal),
           soldAt: new Date().toISOString(),
         })
         .returning();
 
-      let grandTotal = 0;
       const insertedItems = [];
 
       // 4. Decrement stock, create sale item, create stock movement

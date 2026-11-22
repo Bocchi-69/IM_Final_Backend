@@ -12,6 +12,7 @@ export const createSaleSchema = z.object({
         })
       )
       .min(1, "At least one item is required in the sale"),
+    cash_received: z.union([z.number(), z.string().transform(Number)]).optional(),
   }),
 });
 
