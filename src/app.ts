@@ -22,10 +22,10 @@ app.use(
 
 // Strict Production CORS Configuration
 const isProduction = ENV.NODE_ENV === "production";
-const allowedOrigins = new Set<string>([
-  ENV.FRONTEND_URL,
-  ...ENV.ALLOWED_ORIGINS,
-]);
+const cleanOrigin = (url: string) => url.trim().replace(/\/+$/, "");
+
+const rawAllowed = [ENV.FRONTEND_URL, ...ENV.ALLOWED_ORIGINS];
+const allowedOrigins = new Set<string>(rawAllowed.map(cleanOrigin).filter(Boolean));
 
 if (!isProduction) {
   allowedOrigins.add("http://localhost:3000");
@@ -40,8 +40,20 @@ app.use(
       // Allow requests with no origin (like mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
 
-      if (allowedOrigins.has(origin)) {
+      const normalizedOrigin = cleanOrigin(origin);
+
+      if (allowedOrigins.has(normalizedOrigin)) {
         return callback(null, true);
+      }
+
+      // Automatically allow Vercel production and preview deployment URLs (*.vercel.app)
+      try {
+        const hostname = new URL(origin).hostname;
+        if (hostname.endsWith(".vercel.app")) {
+          return callback(null, true);
+        }
+      } catch {
+        // Invalid origin format
       }
 
       // In local development, permit any localhost / 127.0.0.1 port
@@ -52,6 +64,8 @@ app.use(
       // Reject unauthorized cross-origin requests
       return callback(null, false);
     },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-csrf-token", "Accept"],
     credentials: true,
   })
 );
