@@ -112,7 +112,7 @@ export async function getForecastService(storeId: number, horizon = 14, historyD
     const historyStart = Math.max(0, n - 30);
     for (let i = historyStart; i < n; i++) {
       history.push({
-        date: formatLocalDate(activeDates[i]),
+        date: formatManilaDate(activeDates[i]),
         actual: Math.round(activeY[i] * 100) / 100,
       });
     }
