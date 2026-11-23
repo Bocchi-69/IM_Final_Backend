@@ -46,6 +46,18 @@ async function runMigration() {
     console.warn("⚠️ Could not create products_store_barcode_idx (may have existing duplicates):", err.message);
   }
 
+  // 4. Add unique index on users (store_id, lower(trim(name)))
+  try {
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS users_store_name_uidx 
+      ON users(store_id, lower(trim(name))) 
+      WHERE store_id IS NOT NULL;
+    `);
+    console.log("✅ users_store_name_uidx verified");
+  } catch (err: any) {
+    console.warn("⚠️ Could not create users_store_name_uidx (may have existing duplicates):", err.message);
+  }
+
   console.log("Migration complete!");
 }
 

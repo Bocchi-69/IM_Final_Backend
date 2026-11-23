@@ -82,6 +82,33 @@ export class UserRepository {
       .orderBy(asc(users.id));
   }
 
+  async findByNameAndStore(name: string, storeId: number) {
+    const trimmed = name.trim();
+    const [user] = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        role: users.role,
+      })
+      .from(users)
+      .where(and(eq(users.storeId, storeId), sql`LOWER(TRIM(${users.name})) = LOWER(${trimmed})`))
+      .limit(1);
+
+    return user;
+  }
+
+  async findUsersWithPinByStore(storeId: number) {
+    return db
+      .select({
+        id: users.id,
+        name: users.name,
+        role: users.role,
+        pin: users.pin,
+      })
+      .from(users)
+      .where(and(eq(users.storeId, storeId), sql`${users.pin} IS NOT NULL`));
+  }
+
   async create(data: {
     storeId: number;
     name: string;

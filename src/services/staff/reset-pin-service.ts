@@ -15,6 +15,18 @@ export async function resetPinService(
       return { code: 404, status: "error", message: "Staff member not found" };
     }
 
+    // Check if another user in this store already uses the same PIN
+    const existingUsersWithPin = await userRepo.findUsersWithPinByStore(storeId);
+    for (const user of existingUsersWithPin) {
+      if (user.id !== staffId && user.pin && (await bcrypt.compare(input.pin, user.pin))) {
+        return {
+          code: 422,
+          status: "error",
+          message: "This PIN is already in use by another staff member. Please choose a different PIN.",
+        };
+      }
+    }
+
     const hashedPin = await bcrypt.hash(input.pin, 10);
     const updated = await userRepo.updatePin(staffId, hashedPin);
 

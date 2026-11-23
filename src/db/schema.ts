@@ -37,6 +37,8 @@ export const users = pgTable("users", {
 }, (table) => [
   index("user_store_idx").on(table.storeId),
   index("user_email_idx").on(table.email),
+  uniqueIndex("users_store_name_uidx")
+    .on(table.storeId, sql`lower(trim(${table.name}))`),
 ]);
 
 // 3. PRODUCTS
