@@ -1,5 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
@@ -76,8 +78,34 @@ app.use(cookieParser());
 app.use(hpp());
 
 // --- Static Storage (Product Uploaded Images) ---
-const storageDir = path.resolve(process.cwd(), "public/storage");
-app.use("/storage", express.static(storageDir));
+const currentDir = typeof __dirname !== "undefined"
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
+
+const candidateDirs = [
+  path.resolve(process.cwd(), "public/storage"),
+  path.resolve(process.cwd(), "prod-deployment-appsdev/public/storage"),
+  path.resolve(currentDir, "../public/storage"),
+  path.resolve(currentDir, "../../public/storage"),
+];
+
+let storageDir = candidateDirs.find((dir) => fs.existsSync(dir));
+if (!storageDir) {
+  storageDir = fs.existsSync(path.resolve(process.cwd(), "prod-deployment-appsdev"))
+    ? path.resolve(process.cwd(), "prod-deployment-appsdev/public/storage")
+    : path.resolve(process.cwd(), "public/storage");
+}
+fs.mkdirSync(path.join(storageDir, "products"), { recursive: true });
+
+const staticMiddleware = (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  next();
+};
+
+app.use("/storage", staticMiddleware, express.static(storageDir));
+app.use("/api/storage", staticMiddleware, express.static(storageDir));
 
 // --- System & Deployment Health Checks (Before Rate Limiters) ---
 app.get("/up", (_req: Request, res: Response) => {

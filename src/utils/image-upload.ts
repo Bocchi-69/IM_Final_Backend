@@ -5,6 +5,26 @@ import crypto from "node:crypto";
 export const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB limit
 
 /**
+ * Resolves the products storage directory across different process execution roots.
+ */
+export function getProductsStorageDir(): string {
+  const candidates = [
+    path.resolve(process.cwd(), "public/storage/products"),
+    path.resolve(process.cwd(), "prod-deployment-appsdev/public/storage/products"),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(dir)) {
+      return dir;
+    }
+  }
+  const fallback = fs.existsSync(path.resolve(process.cwd(), "prod-deployment-appsdev"))
+    ? path.resolve(process.cwd(), "prod-deployment-appsdev/public/storage/products")
+    : path.resolve(process.cwd(), "public/storage/products");
+  fs.mkdirSync(fallback, { recursive: true });
+  return fallback;
+}
+
+/**
  * Validates magic bytes for allowed image types (PNG, JPEG, WEBP).
  * Rejects SVGs, HTML, scripts, and corrupted binaries.
  */
@@ -117,10 +137,7 @@ export function saveBase64Image(dataUri: string): string | null {
       return null;
     }
 
-    const storageDir = path.resolve(process.cwd(), "public/storage/products");
-    if (!fs.existsSync(storageDir)) {
-      fs.mkdirSync(storageDir, { recursive: true });
-    }
+    const storageDir = getProductsStorageDir();
 
     const filename = `${crypto.randomBytes(20).toString("hex")}.${ext}`;
     fs.writeFileSync(path.join(storageDir, filename), buffer);
@@ -208,10 +225,7 @@ export async function downloadAndSaveImageUrl(initialUrl: string): Promise<strin
           return null;
         }
 
-        const storageDir = path.resolve(process.cwd(), "public/storage/products");
-        if (!fs.existsSync(storageDir)) {
-          fs.mkdirSync(storageDir, { recursive: true });
-        }
+        const storageDir = getProductsStorageDir();
 
         const filename = `${crypto.randomBytes(20).toString("hex")}.${ext}`;
         fs.writeFileSync(path.join(storageDir, filename), buffer);

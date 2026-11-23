@@ -1,16 +1,10 @@
 import { eq, and, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { sales } from "@/db/schema";
+import { formatManilaDate } from "@/utils/timezone";
 
 const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAYS_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-function formatLocalDate(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 
 export async function getForecastService(storeId: number, horizon = 14, historyDays = 120) {
   try {
@@ -21,10 +15,10 @@ export async function getForecastService(storeId: number, horizon = 14, historyD
     start.setDate(start.getDate() - (historyDays - 1));
     start.setHours(0, 0, 0, 0);
 
-    // Fetch daily sales grouped by date
+    // Fetch daily sales grouped by date in Asia/Manila
     const dailyRows = await db
       .select({
-        date: sql<string>`TO_CHAR(${sales.soldAt}, 'YYYY-MM-DD')`,
+        date: sql<string>`TO_CHAR(${sales.soldAt} AT TIME ZONE 'Asia/Manila', 'YYYY-MM-DD')`,
         total: sql<number>`SUM(${sales.total})`,
       })
       .from(sales)
@@ -35,7 +29,7 @@ export async function getForecastService(storeId: number, horizon = 14, historyD
           lte(sales.soldAt, end.toISOString())
         )
       )
-      .groupBy(sql`TO_CHAR(${sales.soldAt}, 'YYYY-MM-DD')`);
+      .groupBy(sql`TO_CHAR(${sales.soldAt} AT TIME ZONE 'Asia/Manila', 'YYYY-MM-DD')`);
 
     const salesByDate = new Map<string, number>();
     for (const r of dailyRows) {
@@ -47,7 +41,7 @@ export async function getForecastService(storeId: number, horizon = 14, historyD
 
     const pointer = new Date(start);
     while (pointer <= end) {
-      const dateStr = formatLocalDate(pointer);
+      const dateStr = formatManilaDate(pointer);
       dates.push(new Date(pointer));
       y.push(salesByDate.get(dateStr) || 0);
       pointer.setDate(pointer.getDate() + 1);
@@ -84,7 +78,7 @@ export async function getForecastService(storeId: number, horizon = 14, historyD
       const upper = Math.round((p + 1.28 * model.sigma) * 100) / 100;
 
       forecast.push({
-        date: formatLocalDate(forecastPointer),
+        date: formatManilaDate(forecastPointer),
         predicted: p,
         lower,
         upper,

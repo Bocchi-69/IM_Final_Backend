@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { sales, saleItems, users } from "@/db/schema";
 import { ProductRepository } from "@/repositories/product-repository";
 import { getForecastService } from "@/services/forecast/get-forecast-service";
+import { getManilaWeekdayShort, getManilaHour, formatManilaDate } from "@/utils/timezone";
 
 export async function getAnalyticsService(storeId: number, daysInput = 30) {
   const days = [7, 30, 90].includes(Number(daysInput)) ? Number(daysInput) : 30;
@@ -78,13 +79,13 @@ export async function getAnalyticsService(storeId: number, daysInput = 30) {
 
     const dayPtr = new Date(start);
     while (dayPtr <= now) {
-      const name = weekdayNames[dayPtr.getDay()];
+      const name = getManilaWeekdayShort(dayPtr);
       weekdayTotals[name].count++;
       dayPtr.setDate(dayPtr.getDate() + 1);
     }
 
     for (const s of currentSales) {
-      const name = weekdayNames[s.soldAt.getDay()];
+      const name = getManilaWeekdayShort(s.soldAt);
       weekdayTotals[name].revenue += s.total;
       weekdayTotals[name].orders++;
     }
@@ -101,7 +102,7 @@ export async function getAnalyticsService(storeId: number, daysInput = 30) {
       };
     });
 
-    // By Hour (0..23)
+    // By Hour (0..23) in Asia/Manila timezone
     const hourlyTotals = Array.from({ length: 24 }, (_, h) => ({
       hour: h,
       revenue: 0.0,
@@ -109,7 +110,7 @@ export async function getAnalyticsService(storeId: number, daysInput = 30) {
     }));
 
     for (const s of currentSales) {
-      const h = s.soldAt.getHours();
+      const h = getManilaHour(s.soldAt);
       hourlyTotals[h].revenue += s.total;
       hourlyTotals[h].orders++;
     }

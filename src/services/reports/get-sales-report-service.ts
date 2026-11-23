@@ -1,13 +1,7 @@
 import { eq, and, gte, sql, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { sales, saleItems } from "@/db/schema";
-
-function formatLocalDate(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+import { formatManilaDate, formatManilaMonth, formatManilaYear } from "@/utils/timezone";
 
 export async function getSalesReportService(storeId: number, period: "daily" | "weekly" | "monthly" | "yearly") {
   try {
@@ -21,11 +15,11 @@ export async function getSalesReportService(storeId: number, period: "daily" | "
       fromDate.setDate(fromDate.getDate() - 13);
       fromDate.setHours(0, 0, 0, 0);
 
-      formatSql = sql<string>`TO_CHAR(${sales.soldAt}, 'YYYY-MM-DD')`;
+      formatSql = sql<string>`TO_CHAR(${sales.soldAt} AT TIME ZONE 'Asia/Manila', 'YYYY-MM-DD')`;
 
       const ptr = new Date(fromDate);
       while (ptr <= now) {
-        buckets.push(formatLocalDate(ptr));
+        buckets.push(formatManilaDate(ptr));
         ptr.setDate(ptr.getDate() + 1);
       }
     } else if (period === "weekly") {
@@ -33,7 +27,7 @@ export async function getSalesReportService(storeId: number, period: "daily" | "
       fromDate.setDate(fromDate.getDate() - 7 * 7);
       fromDate.setHours(0, 0, 0, 0);
 
-      formatSql = sql<string>`TO_CHAR(${sales.soldAt}, 'IYYY-"W"IW')`;
+      formatSql = sql<string>`TO_CHAR(${sales.soldAt} AT TIME ZONE 'Asia/Manila', 'IYYY-"W"IW')`;
 
       // Generate week buckets
       const ptr = new Date(fromDate);
@@ -44,21 +38,21 @@ export async function getSalesReportService(storeId: number, period: "daily" | "
     } else if (period === "monthly") {
       fromDate = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
-      formatSql = sql<string>`TO_CHAR(${sales.soldAt}, 'YYYY-MM')`;
+      formatSql = sql<string>`TO_CHAR(${sales.soldAt} AT TIME ZONE 'Asia/Manila', 'YYYY-MM')`;
 
       const ptr = new Date(fromDate);
       while (ptr <= now) {
-        const m = String(ptr.getMonth() + 1).padStart(2, "0");
-        buckets.push(`${ptr.getFullYear()}-${m}`);
+        buckets.push(formatManilaMonth(ptr));
         ptr.setMonth(ptr.getMonth() + 1);
       }
     } else {
       // yearly
-      fromDate = new Date(now.getFullYear() - 4, 0, 1);
+      const currentYear = parseInt(formatManilaYear(now), 10);
+      fromDate = new Date(currentYear - 4, 0, 1);
 
-      formatSql = sql<string>`TO_CHAR(${sales.soldAt}, 'YYYY')`;
+      formatSql = sql<string>`TO_CHAR(${sales.soldAt} AT TIME ZONE 'Asia/Manila', 'YYYY')`;
 
-      for (let y = now.getFullYear() - 4; y <= now.getFullYear(); y++) {
+      for (let y = currentYear - 4; y <= currentYear; y++) {
         buckets.push(String(y));
       }
     }

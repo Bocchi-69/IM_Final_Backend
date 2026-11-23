@@ -27,8 +27,8 @@ export class SaleRepository {
 
       const prodMap = new Map(prodRows.map((p) => [p.id, p]));
 
-      // 2. Validate stock and pre-calculate total
-      let grandTotal = 0;
+      // 2. Validate stock and pre-calculate total using integer cents (centavos)
+      let grandTotalCents = 0;
       for (const [pId, qty] of wantedMap.entries()) {
         const prod = prodMap.get(pId);
         if (!prod) {
@@ -37,14 +37,19 @@ export class SaleRepository {
         if (prod.stock < qty) {
           throw new Error(`Only ${prod.stock} ${prod.name} in stock.`);
         }
-        grandTotal += parseFloat(prod.price) * qty;
+        const unitPriceCents = Math.round(parseFloat(prod.price) * 100);
+        grandTotalCents += unitPriceCents * qty;
       }
+      const grandTotal = Math.round(grandTotalCents) / 100;
 
       // Validate cash tendered against grand total if provided
-      if (cashReceived !== undefined && cashReceived < grandTotal) {
-        throw new Error(
-          `Insufficient cash received (₱${cashReceived.toFixed(2)}). Total amount due is ₱${grandTotal.toFixed(2)}.`
-        );
+      if (cashReceived !== undefined) {
+        const cashCents = Math.round(cashReceived * 100);
+        if (cashCents < grandTotalCents) {
+          throw new Error(
+            `Insufficient cash received (₱${cashReceived.toFixed(2)}). Total amount due is ₱${grandTotal.toFixed(2)}.`
+          );
+        }
       }
 
       // 3. Insert sale with pre-calculated grandTotal
@@ -54,7 +59,7 @@ export class SaleRepository {
           storeId,
           shiftId,
           userId,
-          total: String(grandTotal),
+          total: grandTotal.toFixed(2),
           soldAt: new Date().toISOString(),
         })
         .returning();
@@ -64,8 +69,10 @@ export class SaleRepository {
       // 4. Decrement stock, create sale item, create stock movement
       for (const [pId, qty] of wantedMap.entries()) {
         const prod = prodMap.get(pId)!;
-        const unitPrice = parseFloat(prod.price);
-        const subtotal = unitPrice * qty;
+        const unitPriceCents = Math.round(parseFloat(prod.price) * 100);
+        const subtotalCents = unitPriceCents * qty;
+        const unitPrice = (unitPriceCents / 100).toFixed(2);
+        const subtotal = (subtotalCents / 100).toFixed(2);
 
         // Decrement product stock atomically
         await tx
@@ -84,9 +91,9 @@ export class SaleRepository {
             productId: pId,
             productName: prod.name,
             sku: prod.sku,
-            unitPrice: String(unitPrice),
+            unitPrice: unitPrice,
             quantity: qty,
-            subtotal: String(subtotal),
+            subtotal: subtotal,
           })
           .returning();
 
