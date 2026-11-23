@@ -13,7 +13,7 @@ export function createRateLimiter(options: RateLimiterOptions) {
     windowMs,
     max,
     message = "Too many requests, please try again later.",
-    keyGenerator = (req: Request) => req.ip || req.socket.remoteAddress || "unknown-client",
+    keyGenerator,
   } = options;
 
   return rateLimit({
@@ -22,7 +22,7 @@ export function createRateLimiter(options: RateLimiterOptions) {
     standardHeaders: "draft-7",
     legacyHeaders: true,
     validate: { xForwardedForHeader: false, default: true },
-    keyGenerator,
+    ...(keyGenerator ? { keyGenerator } : {}),
     handler: (req: Request, res: Response) => {
       const resetTime = (req as any).rateLimit?.resetTime;
       const resetSeconds = resetTime

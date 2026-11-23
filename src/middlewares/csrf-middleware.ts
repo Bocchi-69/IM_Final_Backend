@@ -11,34 +11,25 @@ export class CsrfMiddleware {
   };
 
   // Browsers fetch a CSRF token before signup/login when using cookie sessions.
-  // Cookie-free JSON clients (SPAs using Bearer tokens, mobile apps) can authenticate directly.
+  // JSON clients (SPAs using Bearer tokens, mobile apps) authenticate directly and are protected by CORS preflight.
   public auth = (req: Request, res: Response, next: NextFunction) => {
-    const hasCsrfCookie = Boolean(req.cookies?.[csrfSessionCookieName] || req.cookies?.[csrfTokenCookieName]);
-    const hasCsrfHeader = Boolean(req.get("x-csrf-token"));
-    const hasAuthCookie = Boolean(req.cookies?.accessToken || req.cookies?.refreshToken);
-
-    if (req.is("application/json") && !hasCsrfCookie && !hasCsrfHeader && !hasAuthCookie) {
-      return next();
-    }
-
-    if (hasCsrfHeader || hasCsrfCookie || hasAuthCookie) {
+    if (req.get("x-csrf-token")) {
       return this.validate(req, res, next);
     }
 
-    if (req.is("application/json")) return next();
+    if (req.is("application/json")) {
+      return next();
+    }
+
     return this.validate(req, res, next);
   };
 
   // An access Bearer token does not bypass protection for a refresh token taken from cookies.
   public refreshToken = (req: Request, res: Response, next: NextFunction) => {
     const token = req.body?.refreshToken;
-    if (
-      !req.cookies?.accessToken &&
-      !req.cookies?.refreshToken &&
-      typeof token === "string" &&
-      verifyRefreshToken(token)
-    )
+    if (typeof token === "string" && verifyRefreshToken(token)) {
       return next();
+    }
     return this.validate(req, res, next);
   };
 
