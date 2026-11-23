@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   serial,
@@ -6,6 +7,7 @@ import {
   numeric,
   timestamp,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // 1. STORES
@@ -53,8 +55,12 @@ export const products = pgTable("products", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
 }, (table) => [
-  index("product_store_sku_idx").on(table.storeId, table.sku),
-  index("product_store_barcode_idx").on(table.storeId, table.barcode),
+  uniqueIndex("product_store_sku_uidx")
+    .on(table.storeId, sql`lower(${table.sku})`)
+    .where(sql`${table.deletedAt} IS NULL`),
+  uniqueIndex("product_store_barcode_uidx")
+    .on(table.storeId, table.barcode)
+    .where(sql`${table.deletedAt} IS NULL`),
 ]);
 
 // 4. SHIFTS
@@ -62,6 +68,7 @@ export const shifts = pgTable("shifts", {
   id: serial("id").primaryKey(),
   storeId: integer("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
   userId: integer("user_id").references(() => users.id).notNull(),
+  openingFloat: numeric("opening_float", { precision: 12, scale: 2 }).default("500.00").notNull(),
   startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
   endedAt: timestamp("ended_at", { withTimezone: true, mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
@@ -88,11 +95,11 @@ export const sales = pgTable("sales", {
   index("sales_user_id_idx").on(table.userId),
 ]);
 
-// 6. SALE ITEMS
+// 6. SALE ITEMS (Products are soft-deleted; historical sale records are restricted from deletion)
 export const saleItems = pgTable("sale_items", {
   id: serial("id").primaryKey(),
   saleId: integer("sale_id").references(() => sales.id, { onDelete: "cascade" }).notNull(),
-  productId: integer("product_id").references(() => products.id).notNull(),
+  productId: integer("product_id").references(() => products.id, { onDelete: "restrict" }).notNull(),
   productName: text("product_name").notNull(),
   sku: text("sku").notNull(),
   unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
@@ -105,11 +112,11 @@ export const saleItems = pgTable("sale_items", {
   index("sale_items_product_id_idx").on(table.productId),
 ]);
 
-// 7. STOCK MOVEMENTS
+// 7. STOCK MOVEMENTS (Audit trail restricted from orphaned deletions)
 export const stockMovements = pgTable("stock_movements", {
   id: serial("id").primaryKey(),
   storeId: integer("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
-  productId: integer("product_id").references(() => products.id).notNull(),
+  productId: integer("product_id").references(() => products.id, { onDelete: "restrict" }).notNull(),
   userId: integer("user_id").references(() => users.id),
   type: text("type").notNull(), // 'initial' | 'restock' | 'sale'
   quantity: integer("quantity").notNull(),
@@ -125,6 +132,7 @@ export const stockMovements = pgTable("stock_movements", {
 export const cashDrops = pgTable("cash_drops", {
   id: serial("id").primaryKey(),
   storeId: integer("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  shiftId: integer("shift_id").references(() => shifts.id, { onDelete: "set null" }),
   userId: integer("user_id").references(() => users.id),
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
   note: text("note"),
@@ -133,6 +141,7 @@ export const cashDrops = pgTable("cash_drops", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
 }, (table) => [
   index("cash_drops_store_idx").on(table.storeId),
+  index("cash_drops_shift_idx").on(table.shiftId),
 ]);
 
 // 9. STORE EXPENSES

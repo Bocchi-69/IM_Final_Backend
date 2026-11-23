@@ -1,4 +1,4 @@
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { users, stores } from "@/db/schema";
 
@@ -76,7 +76,6 @@ export class UserRepository {
         id: users.id,
         name: users.name,
         role: users.role,
-        email: users.email,
       })
       .from(users)
       .where(eq(users.storeId, storeId))
@@ -123,24 +122,21 @@ export class UserRepository {
     return user;
   }
 
-  async incrementFailedPin(id: number, currentAttempts: number) {
-    const newAttempts = currentAttempts + 1;
-    const shouldLock = newAttempts >= 3;
-    const lockedUntil = shouldLock
-      ? new Date(Date.now() + 15 * 60 * 1000).toISOString()
-      : null;
-
+  async incrementFailedPin(id: number, _currentAttempts?: number) {
     const [user] = await db
       .update(users)
       .set({
-        failedPinAttempts: shouldLock ? 0 : newAttempts,
-        pinLockedUntil: lockedUntil,
-        updatedAt: new Date().toISOString(),
+        pinLockedUntil: sql`CASE WHEN ${users.failedPinAttempts} + 1 >= 3 THEN NOW() + INTERVAL '15 minutes' ELSE ${users.pinLockedUntil} END`,
+        failedPinAttempts: sql`CASE WHEN ${users.failedPinAttempts} + 1 >= 3 THEN 0 ELSE ${users.failedPinAttempts} + 1 END`,
+        updatedAt: sql`NOW()`,
       })
       .where(eq(users.id, id))
       .returning();
 
-    return { user, locked: shouldLock, attempts: newAttempts };
+    const isLocked = Boolean(user?.pinLockedUntil && new Date(user.pinLockedUntil) > new Date());
+    const attempts = isLocked ? 3 : (user?.failedPinAttempts ?? 1);
+
+    return { user, locked: isLocked, attempts };
   }
 
   async resetFailedPin(id: number) {

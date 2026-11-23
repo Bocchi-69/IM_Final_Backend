@@ -81,7 +81,8 @@ Default configuration:
 APP_NAME=Stockify POS API
 PORT=3001
 NODE_ENV=development
-JWT_SECRET=dea4828575f9a05f7acee3c95f42d3890192837465abcedf
+JWT_SECRET=your_super_secret_jwt_key_here
+CSRF_SECRET=your_super_secret_csrf_key_here
 BACKEND_URL=http://localhost:3001
 FRONTEND_URL=http://localhost:3000
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/tindahan

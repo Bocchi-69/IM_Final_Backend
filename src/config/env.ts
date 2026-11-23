@@ -24,8 +24,13 @@ for (const envPath of candidates) {
 
 const isProduction = process.env.NODE_ENV === "production";
 
-if (isProduction && (!process.env.JWT_SECRET || process.env.JWT_SECRET === "fallback_secret_change_me")) {
-  console.warn("⚠️ WARNING: JWT_SECRET is not securely set in production environment!");
+if (isProduction) {
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === "fallback_secret_change_me") {
+    throw new Error("FATAL: JWT_SECRET must be set to a secure, unique secret in production environment!");
+  }
+  if (!process.env.CSRF_SECRET || process.env.CSRF_SECRET.trim() === "") {
+    throw new Error("FATAL: CSRF_SECRET must be set in production environment!");
+  }
 }
 
 export const ENV = {
@@ -41,4 +46,7 @@ export const ENV = {
   DATABASE_URL: process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/tindahan",
   CSRF_SECRET: process.env.CSRF_SECRET,
   GEMINI_API_KEY: (process.env.GEMINI_API_KEY || "").trim(),
+  GEMINI_MODELS: process.env.GEMINI_MODELS
+    ? process.env.GEMINI_MODELS.split(",").map((m) => m.trim()).filter(Boolean)
+    : ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"],
 };

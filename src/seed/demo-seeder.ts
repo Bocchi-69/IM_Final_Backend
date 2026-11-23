@@ -14,6 +14,11 @@ import {
 } from "@/db/schema";
 
 async function runSeed() {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PROD_SEED !== "true") {
+    console.error("❌ Refusing to seed demo accounts in production environment! Set ALLOW_PROD_SEED=true if this was intentional.");
+    process.exit(1);
+  }
+
   console.log("🌱 Starting Stockify Demo Seeder...");
 
   try {

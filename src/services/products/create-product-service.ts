@@ -1,9 +1,7 @@
-import fs from "node:fs";
-import path from "node:path";
-import crypto from "node:crypto";
 import { ProductRepository } from "@/repositories/product-repository";
 import { StockMovementRepository } from "@/repositories/stock-movement-repository";
 import type { CreateProductInput } from "@/schema/product-schema";
+import { saveBase64Image, downloadAndSaveImageUrl } from "@/utils/image-upload";
 
 export async function createProductService(
   storeId: number,
@@ -80,7 +78,18 @@ export async function createProductService(
       message: "Product created successfully",
       data: product,
     };
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === "23505") {
+      const constraint = (error?.constraint || "").toLowerCase();
+      const detail = (error?.detail || "").toLowerCase();
+      if (constraint.includes("sku") || detail.includes("sku")) {
+        return { code: 422, status: "error", message: "The sku has already been taken." };
+      }
+      if (constraint.includes("barcode") || detail.includes("barcode")) {
+        return { code: 422, status: "error", message: "The barcode has already been taken." };
+      }
+      return { code: 422, status: "error", message: "A product with this SKU or barcode already exists." };
+    }
     console.error("createProductService Error:", error);
     return { code: 500, status: "error", message: "Failed to create product" };
   }
@@ -123,134 +132,13 @@ export async function generateSku(repo: ProductRepository, storeId: number, name
   }
   if (!prefix || prefix.length < 2) prefix = "PRD";
 
-  let max = (await repo.getMaxId()) + 1;
-  let sku = `${prefix}-${String(max).padStart(3, "0")}`;
+  let seq = (await repo.getStoreProductCount(storeId)) + 1;
+  let sku = `${prefix}-${String(seq).padStart(3, "0")}`;
 
   while (await repo.checkSkuExists(storeId, sku)) {
-    max++;
-    sku = `${prefix}-${String(max).padStart(3, "0")}`;
+    seq++;
+    sku = `${prefix}-${String(seq).padStart(3, "0")}`;
   }
 
   return sku;
-}
-
-function saveBase64Image(dataUri: string): string | null {
-  try {
-    const parts = dataUri.split(";base64,");
-    if (parts.length !== 2) return null;
-
-    const mime = parts[0].replace(/^data:/, "").split("/")[1] || "png";
-    let ext = mime.toLowerCase();
-    if (ext === "jpeg") ext = "jpg";
-    if (ext.includes("svg")) ext = "svg";
-    if (ext.includes("webp")) ext = "webp";
-
-    const data = Buffer.from(parts[1], "base64");
-
-    const storageDir = path.resolve(process.cwd(), "public/storage/products");
-    if (!fs.existsSync(storageDir)) {
-      fs.mkdirSync(storageDir, { recursive: true });
-    }
-
-    const filename = `${crypto.randomBytes(20).toString("hex")}.${ext}`;
-    fs.writeFileSync(path.join(storageDir, filename), data);
-
-    return `products/${filename}`;
-  } catch (e) {
-    console.error("saveBase64Image Error:", e);
-    return null;
-  }
-}
-
-function isPrivateOrLocalHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().trim();
-  if (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host.endsWith(".local") ||
-    host.endsWith(".internal") ||
-    host.endsWith(".arpa")
-  ) {
-    return true;
-  }
-
-  // Check IPv4 private and link-local ranges
-  const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-  const match = host.match(ipv4Regex);
-  if (match) {
-    const [, b1, b2] = match.map(Number);
-    if (b1 === 127) return true; // Loopback
-    if (b1 === 10) return true; // Private class A
-    if (b1 === 169 && b2 === 254) return true; // Link-local / AWS / Cloud metadata
-    if (b1 === 192 && b2 === 168) return true; // Private class C
-    if (b1 === 172 && b2 >= 16 && b2 <= 31) return true; // Private class B
-    if (b1 === 0) return true; // Zero address
-  }
-
-  // Check IPv6 loopback and unique local
-  if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc00:") || host.startsWith("fd00:")) {
-    return true;
-  }
-
-  return false;
-}
-
-async function downloadAndSaveImageUrl(url: string): Promise<string | null> {
-  try {
-    const clean = url.trim();
-    const parsed = new URL(clean);
-
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return null;
-    }
-
-    // SSRF Protection: Prevent SSRF calls to local/private/cloud metadata endpoints
-    if (isPrivateOrLocalHost(parsed.hostname)) {
-      console.warn("Blocked SSRF attempt to private/internal host:", parsed.hostname);
-      return null;
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
-
-    const res = await fetch(clean, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "image/*,*/*;q=0.8",
-      },
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) return null;
-
-    const contentType = (res.headers.get("content-type") || "").toLowerCase();
-    // Verify that the response is actually an image
-    if (!contentType.startsWith("image/")) {
-      return null;
-    }
-
-    let ext = "jpg";
-    if (contentType.includes("png")) ext = "png";
-    else if (contentType.includes("webp")) ext = "webp";
-    else if (contentType.includes("gif")) ext = "gif";
-    else if (contentType.includes("svg")) ext = "svg";
-
-    const buffer = Buffer.from(await res.arrayBuffer());
-    if (buffer.length < 50) return null;
-
-    const storageDir = path.resolve(process.cwd(), "public/storage/products");
-    if (!fs.existsSync(storageDir)) {
-      fs.mkdirSync(storageDir, { recursive: true });
-    }
-
-    const filename = `${crypto.randomBytes(20).toString("hex")}.${ext}`;
-    fs.writeFileSync(path.join(storageDir, filename), buffer);
-
-    return `products/${filename}`;
-  } catch (err) {
-    console.warn("downloadAndSaveImageUrl notice:", err);
-    return null;
-  }
 }

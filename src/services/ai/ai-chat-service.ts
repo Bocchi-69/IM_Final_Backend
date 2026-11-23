@@ -134,12 +134,10 @@ RESPONSE FORMAT & TONE:
     });
 
     // 5. Call Gemini API with resilient model fallback chain
-    const candidateModels = [
-      "gemini-flash-lite-latest",
-      "gemini-3.5-flash-lite",
-      "gemini-3.8-flash",
-      "gemini-flash-latest",
-    ];
+    const candidateModels =
+      ENV.GEMINI_MODELS && ENV.GEMINI_MODELS.length > 0
+        ? ENV.GEMINI_MODELS
+        : ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"];
 
     const requestBody = {
       systemInstruction: {

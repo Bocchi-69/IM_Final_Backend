@@ -25,7 +25,12 @@ export class ShiftController {
       return res.status(403).json({ code: 403, status: "error", message: "Forbidden: No store assigned to this account" });
     }
 
-    const result = await startShiftService(auth.userId, auth.storeId);
+    const openingFloat = Number(req.body?.opening_float ?? req.body?.float ?? 500);
+    const result = await startShiftService(
+      auth.userId,
+      auth.storeId,
+      isNaN(openingFloat) ? 500 : openingFloat
+    );
     return res.status(result.code).json({ shift: result.shift });
   };
 

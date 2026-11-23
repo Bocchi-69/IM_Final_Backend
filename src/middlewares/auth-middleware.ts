@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { verifyAccessToken, JwtPayload } from "@/lib/jwt";
+import { UserRepository } from "@/repositories/user-repository";
 
 export type AuthenticatedUser = JwtPayload & {
   id: number;
@@ -12,6 +13,12 @@ export type AuthenticatedRequest = Request & {
 };
 
 export class AuthMiddleware {
+  private userRepo: UserRepository;
+
+  constructor() {
+    this.userRepo = new UserRepository();
+  }
+
   public execute = async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthenticatedRequest;
 
@@ -34,11 +41,27 @@ export class AuthMiddleware {
       return res.status(401).json({ code: 401, status: "error", message: "Invalid or expired token" });
     }
 
-    // 4. Attach user to request
+    const userId = parseInt(payload.sub, 10);
+    if (!userId || isNaN(userId)) {
+      return res.status(401).json({ code: 401, status: "error", message: "Invalid token subject" });
+    }
+
+    // 4. Verify user still exists in DB (revokes access immediately on staff deletion)
+    const user = await this.userRepo.findById(userId);
+    if (!user || user.storeId !== payload.storeId) {
+      return res.status(401).json({
+        code: 401,
+        status: "error",
+        message: "User account no longer exists or access was revoked",
+      });
+    }
+
+    // 5. Attach user to request
     authReq.user = {
       ...payload,
-      id: parseInt(payload.sub, 10),
-      store_id: payload.storeId,
+      id: userId,
+      role: user.role as any,
+      store_id: user.storeId,
     };
     authReq.authMethod = authMethod;
     return next();

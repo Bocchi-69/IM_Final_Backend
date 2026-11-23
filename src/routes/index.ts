@@ -38,6 +38,7 @@ router.use("/sales", saleRoutes);
 router.use("/staff", staffRoutes);
 
 // 7. Operations (Cash drops & expenses)
+router.use("/operations", operationRoutes);
 router.use("/", operationRoutes);
 
 // 8. Analytics

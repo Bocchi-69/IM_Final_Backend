@@ -1,4 +1,4 @@
-import { eq, and, isNull, desc, inArray, sql, gte } from "drizzle-orm";
+import { eq, and, isNull, desc, inArray, sql, gte, or } from "drizzle-orm";
 import { db } from "@/db";
 import { shifts, sales, saleItems, users, cashDrops } from "@/db/schema";
 
@@ -9,6 +9,7 @@ export class ShiftRepository {
         id: shifts.id,
         storeId: shifts.storeId,
         userId: shifts.userId,
+        opening_float: shifts.openingFloat,
         started_at: shifts.startedAt,
         ended_at: shifts.endedAt,
         user: {
@@ -30,6 +31,7 @@ export class ShiftRepository {
         id: shifts.id,
         storeId: shifts.storeId,
         userId: shifts.userId,
+        opening_float: shifts.openingFloat,
         started_at: shifts.startedAt,
         ended_at: shifts.endedAt,
         user: {
@@ -62,7 +64,12 @@ export class ShiftRepository {
           total: sql<number>`COALESCE(SUM(${cashDrops.amount}), 0)`,
         })
         .from(cashDrops)
-        .where(and(eq(cashDrops.storeId, storeId), gte(cashDrops.createdAt, shiftStartedAt)));
+        .where(
+          or(
+            eq(cashDrops.shiftId, shiftId),
+            and(isNull(cashDrops.shiftId), eq(cashDrops.storeId, storeId), gte(cashDrops.createdAt, shiftStartedAt))
+          )
+        );
       cashDropsTotal = parseFloat(String(dropsResult?.total || 0));
     }
 
@@ -105,7 +112,7 @@ export class ShiftRepository {
     }));
   }
 
-  async startShift(userId: number, storeId: number) {
+  async startShift(userId: number, storeId: number, openingFloat: number = 500) {
     const existing = await this.findActiveShift(userId, storeId);
     if (existing) return existing;
 
@@ -114,6 +121,7 @@ export class ShiftRepository {
       .values({
         userId,
         storeId,
+        openingFloat: String(openingFloat || 500),
         startedAt: new Date().toISOString(),
       })
       .returning();
@@ -124,6 +132,7 @@ export class ShiftRepository {
       id: created.id,
       storeId: created.storeId,
       userId: created.userId,
+      opening_float: created.openingFloat,
       started_at: created.startedAt,
       ended_at: created.endedAt,
       user,

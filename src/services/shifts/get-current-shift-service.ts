@@ -27,6 +27,7 @@ export async function getCurrentShiftService(userId: number, storeId: number, ro
       id: shift.id,
       started_at: shift.started_at,
       ended_at: shift.ended_at,
+      opening_float: Number(shift.opening_float ?? 500),
       user: shift.user,
       total: stats.total,
       sales_count: stats.sales_count,

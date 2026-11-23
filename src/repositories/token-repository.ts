@@ -86,4 +86,14 @@ export class TokenRepository {
 
     return row;
   }
+
+  async revokeAllByUserId(userId: number) {
+    const revokedAt = new Date().toISOString();
+
+    return db
+      .update(tokens)
+      .set({ revokedAt })
+      .where(eq(tokens.userId, userId))
+      .returning();
+  }
 }

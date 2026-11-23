@@ -4,6 +4,10 @@ import { ENV } from "@/config/env";
 
 const isProduction = ENV.NODE_ENV === "production";
 
+if (isProduction && (!ENV.CSRF_SECRET || ENV.CSRF_SECRET.trim() === "")) {
+  throw new Error("FATAL: CSRF_SECRET must be set in production environment!");
+}
+
 export const csrfCookieOptions = {
   httpOnly: true,
   secure: isProduction,

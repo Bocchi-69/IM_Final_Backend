@@ -26,6 +26,7 @@ export class OperationRepository {
   async createCashDrop(data: {
     storeId: number;
     userId: number;
+    shiftId?: number | null;
     amount: number | string;
     note?: string | null;
     cashier?: string | null;
@@ -35,6 +36,7 @@ export class OperationRepository {
       .values({
         storeId: data.storeId,
         userId: data.userId,
+        shiftId: data.shiftId ?? null,
         amount: String(data.amount),
         note: data.note ?? null,
         cashier: data.cashier ?? null,

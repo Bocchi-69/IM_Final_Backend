@@ -1,8 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
-import crypto from "node:crypto";
 import { ProductRepository } from "@/repositories/product-repository";
 import type { UpdateProductInput } from "@/schema/product-schema";
+import { saveBase64Image, downloadAndSaveImageUrl } from "@/utils/image-upload";
 
 export async function updateProductService(
   productId: number,
@@ -21,6 +19,12 @@ export async function updateProductService(
     if (typeof input.image === "string" && input.image.startsWith("data:image")) {
       const saved = saveBase64Image(input.image);
       if (saved) imagePath = saved;
+    } else if (typeof input.image === "string" && input.image.startsWith("http")) {
+      const downloaded = await downloadAndSaveImageUrl(input.image);
+      if (downloaded) imagePath = downloaded;
+    } else if (input.image_url?.startsWith("http")) {
+      const downloaded = await downloadAndSaveImageUrl(input.image_url);
+      if (downloaded) imagePath = downloaded;
     }
 
     const updated = await productRepo.update(productId, storeId, {
@@ -37,32 +41,11 @@ export async function updateProductService(
       message: "Product updated successfully",
       data: updated,
     };
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === "23505") {
+      return { code: 422, status: "error", message: "A product with this SKU or barcode already exists." };
+    }
     console.error("updateProductService Error:", error);
     return { code: 500, status: "error", message: "Failed to update product" };
-  }
-}
-
-function saveBase64Image(dataUri: string): string | null {
-  try {
-    const matches = dataUri.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (!matches) return null;
-
-    let ext = matches[1].toLowerCase();
-    if (ext === "jpeg") ext = "jpg";
-    const data = Buffer.from(matches[2], "base64");
-
-    const storageDir = path.resolve(process.cwd(), "public/storage/products");
-    if (!fs.existsSync(storageDir)) {
-      fs.mkdirSync(storageDir, { recursive: true });
-    }
-
-    const filename = `${crypto.randomBytes(20).toString("hex")}.${ext}`;
-    fs.writeFileSync(path.join(storageDir, filename), data);
-
-    return `products/${filename}`;
-  } catch (e) {
-    console.error("saveBase64Image Error:", e);
-    return null;
   }
 }

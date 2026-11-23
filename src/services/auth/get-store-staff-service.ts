@@ -11,7 +11,12 @@ export async function getStoreStaffService(code: string) {
       return { code: 404, status: "error", message: "Store not found." };
     }
 
-    const staff = await userRepo.findStaffByStoreId(store.id);
+    const rawStaff = await userRepo.findStaffByStoreId(store.id);
+    const staff = rawStaff.map((member) => ({
+      id: member.id,
+      name: member.name,
+      role: member.role,
+    }));
 
     return {
       code: 200,

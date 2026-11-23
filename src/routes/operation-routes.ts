@@ -16,21 +16,22 @@ const schemaMiddleware = new SchemaMiddleware();
 const roleValidator = new RoleValidatorMiddleware();
 const opController = new OperationController();
 
-// All operation management routes require authentication and store owner role
-router.use(authMiddleware.execute);
-router.use(roleValidator.validate("owner"));
+// Explicit per-route guards: only cash-drops and expenses require owner authentication
+const ownerGuard = [authMiddleware.execute, roleValidator.validate("owner")];
 
-router.get("/cash-drops", opController.getCashDrops);
+router.get("/cash-drops", ownerGuard, opController.getCashDrops);
 router.post(
   "/cash-drops",
+  ownerGuard,
   csrfMiddleware.execute,
   schemaMiddleware.validate(createCashDropSchema),
   opController.storeCashDrop
 );
 
-router.get("/expenses", opController.getExpenses);
+router.get("/expenses", ownerGuard, opController.getExpenses);
 router.post(
   "/expenses",
+  ownerGuard,
   csrfMiddleware.execute,
   schemaMiddleware.validate(createExpenseSchema),
   opController.storeExpense

@@ -139,6 +139,14 @@ export class ProductRepository {
     return Boolean(row);
   }
 
+  async getStoreProductCount(storeId: number): Promise<number> {
+    const [result] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(products)
+      .where(eq(products.storeId, storeId));
+    return Number(result?.count || 0);
+  }
+
   async getMaxId(): Promise<number> {
     const [result] = await db.select({ max: sql<number>`COALESCE(MAX(${products.id}), 0)` }).from(products);
     return Number(result?.max || 0);

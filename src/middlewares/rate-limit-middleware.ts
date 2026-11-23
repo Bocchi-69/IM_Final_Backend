@@ -1,15 +1,11 @@
-import type { Request, Response, NextFunction } from "express";
+import rateLimit from "express-rate-limit";
+import type { Request, Response } from "express";
 
 interface RateLimiterOptions {
   windowMs: number; // Duration of window in ms
   max: number; // Max requests allowed within windowMs
   message?: string;
-  keyGenerator?: (req: Request) => string;
-}
-
-interface ClientRecord {
-  count: number;
-  resetTime: number;
+  keyGenerator?: (req: Request, res: Response) => string | Promise<string>;
 }
 
 export function createRateLimiter(options: RateLimiterOptions) {
@@ -17,56 +13,22 @@ export function createRateLimiter(options: RateLimiterOptions) {
     windowMs,
     max,
     message = "Too many requests, please try again later.",
-    keyGenerator = (req: Request) => {
-      const forwarded = req.headers["x-forwarded-for"];
-      if (typeof forwarded === "string") {
-        return forwarded.split(",")[0].trim();
-      }
-      return req.ip || req.socket.remoteAddress || "unknown-client";
-    },
+    keyGenerator = (req: Request) => req.ip || req.socket.remoteAddress || "unknown-client",
   } = options;
 
-  const storage = new Map<string, ClientRecord>();
+  return rateLimit({
+    windowMs,
+    limit: max,
+    standardHeaders: "draft-7",
+    legacyHeaders: true,
+    validate: { xForwardedForHeader: false, default: true },
+    keyGenerator,
+    handler: (req: Request, res: Response) => {
+      const resetTime = (req as any).rateLimit?.resetTime;
+      const resetSeconds = resetTime
+        ? Math.max(1, Math.ceil((new Date(resetTime).getTime() - Date.now()) / 1000))
+        : Math.ceil(windowMs / 1000);
 
-  // Cleanup expired client records periodically every 5 minutes to prevent memory leak
-  const cleanupInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [key, record] of storage.entries()) {
-      if (now > record.resetTime) {
-        storage.delete(key);
-      }
-    }
-  }, 5 * 60 * 1000);
-
-  // Unref interval so it doesn't prevent Node process from exiting
-  if (cleanupInterval.unref) {
-    cleanupInterval.unref();
-  }
-
-  return (req: Request, res: Response, next: NextFunction) => {
-    const key = keyGenerator(req);
-    const now = Date.now();
-
-    let record = storage.get(key);
-
-    if (!record || now > record.resetTime) {
-      record = {
-        count: 1,
-        resetTime: now + windowMs,
-      };
-      storage.set(key, record);
-    } else {
-      record.count += 1;
-    }
-
-    const remaining = Math.max(0, max - record.count);
-    const resetSeconds = Math.ceil((record.resetTime - now) / 1000);
-
-    res.setHeader("X-RateLimit-Limit", max);
-    res.setHeader("X-RateLimit-Remaining", remaining);
-    res.setHeader("X-RateLimit-Reset", Math.ceil(record.resetTime / 1000));
-
-    if (record.count > max) {
       res.setHeader("Retry-After", resetSeconds);
       return res.status(429).json({
         code: 429,
@@ -74,10 +36,8 @@ export function createRateLimiter(options: RateLimiterOptions) {
         message,
         retryAfter: resetSeconds,
       });
-    }
-
-    return next();
-  };
+    },
+  });
 }
 
 // 1. Strict Auth Limiter: Protects login & PIN verification from brute force attacks

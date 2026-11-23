@@ -22,7 +22,7 @@ export async function createCashDropService(
     }
 
     const stats = await shiftRepo.getShiftStats(activeShift.id, storeId, activeShift.started_at);
-    const startingFloat = 500;
+    const startingFloat = Number(activeShift.opening_float ?? 500);
     const availableCash = Math.max(0, startingFloat + stats.total - stats.cash_drops_total);
     const dropAmount = Number(input.amount);
 
@@ -45,6 +45,7 @@ export async function createCashDropService(
 
     const drop = await opRepo.createCashDrop({
       storeId,
+      shiftId: activeShift.id,
       userId,
       amount: dropAmount,
       note: input.note,
