@@ -55,6 +55,11 @@ export const restockProductSchema = z.object({
       message: "Quantity must be at least 1",
     }),
     note: z.string().max(120).optional().nullable(),
+    new_price: z
+      .union([z.number(), z.string().regex(/^\d+(\.\d+)?$/).transform(Number)])
+      .refine((n) => n >= 0.01, { message: "New price must be at least 0.01" })
+      .optional()
+      .nullable(),
   }),
 });
 

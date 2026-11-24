@@ -17,7 +17,17 @@ export async function restockProductService(
       return { code: 404, status: "error", message: "Product not found" };
     }
 
-    const updated = await productRepo.incrementStock(productId, storeId, input.quantity);
+    // Determine if the old stock was sold out (zero) before this restock
+    const wasOutOfStock = existing.stock === 0;
+
+    // Increment stock first
+    let updated = await productRepo.incrementStock(productId, storeId, input.quantity);
+
+    // If a new price is provided and the old stock was sold out, update the price now.
+    // This applies the new price to the fresh batch of incoming stock.
+    if (input.new_price != null && wasOutOfStock) {
+      updated = await productRepo.update(productId, storeId, { price: input.new_price }) ?? updated;
+    }
 
     await movementRepo.create({
       storeId,
@@ -25,13 +35,19 @@ export async function restockProductService(
       userId,
       type: "restock",
       quantity: input.quantity,
-      note: input.note || null,
+      note: input.note
+        ? input.note
+        : input.new_price != null && wasOutOfStock
+        ? `Price updated to ${input.new_price} on restock`
+        : null,
     });
 
     return {
       code: 200,
       status: "success",
-      message: "Product restocked successfully",
+      message: wasOutOfStock && input.new_price != null
+        ? "Product restocked and price updated successfully"
+        : "Product restocked successfully",
       data: updated,
     };
   } catch (error) {
