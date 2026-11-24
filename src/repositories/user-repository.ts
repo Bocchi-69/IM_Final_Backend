@@ -1,4 +1,4 @@
-import { eq, and, asc, sql } from "drizzle-orm";
+import { eq, and, asc, sql, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { users, stores } from "@/db/schema";
 
@@ -14,6 +14,7 @@ export class UserRepository {
         failedPinAttempts: users.failedPinAttempts,
         pinLockedUntil: users.pinLockedUntil,
         emailVerifiedAt: users.emailVerifiedAt,
+        deletedAt: users.deletedAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
         store: {
@@ -44,6 +45,7 @@ export class UserRepository {
         failedPinAttempts: users.failedPinAttempts,
         pinLockedUntil: users.pinLockedUntil,
         emailVerifiedAt: users.emailVerifiedAt,
+        deletedAt: users.deletedAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
         store: {
@@ -65,7 +67,7 @@ export class UserRepository {
     const [user] = await db
       .select()
       .from(users)
-      .where(and(eq(users.id, userId), eq(users.storeId, storeId)))
+      .where(and(eq(users.id, userId), eq(users.storeId, storeId), isNull(users.deletedAt)))
       .limit(1);
     return user;
   }
@@ -78,7 +80,7 @@ export class UserRepository {
         role: users.role,
       })
       .from(users)
-      .where(eq(users.storeId, storeId))
+      .where(and(eq(users.storeId, storeId), isNull(users.deletedAt)))
       .orderBy(asc(users.id));
   }
 
@@ -91,7 +93,7 @@ export class UserRepository {
         role: users.role,
       })
       .from(users)
-      .where(and(eq(users.storeId, storeId), sql`LOWER(TRIM(${users.name})) = LOWER(${trimmed})`))
+      .where(and(eq(users.storeId, storeId), isNull(users.deletedAt), sql`LOWER(TRIM(${users.name})) = LOWER(${trimmed})`))
       .limit(1);
 
     return user;
@@ -106,7 +108,7 @@ export class UserRepository {
         pin: users.pin,
       })
       .from(users)
-      .where(and(eq(users.storeId, storeId), sql`${users.pin} IS NOT NULL`));
+      .where(and(eq(users.storeId, storeId), isNull(users.deletedAt), sql`${users.pin} IS NOT NULL`));
   }
 
   async create(data: {
@@ -179,9 +181,20 @@ export class UserRepository {
 
   async deleteStaff(id: number, storeId: number) {
     const [deleted] = await db
-      .delete(users)
-      .where(and(eq(users.id, id), eq(users.storeId, storeId), eq(users.role, "employee")))
-      .returning();
+      .update(users)
+      .set({
+        deletedAt: new Date().toISOString(),
+        pin: null,
+        failedPinAttempts: 0,
+        pinLockedUntil: null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(and(eq(users.id, id), eq(users.storeId, storeId), eq(users.role, "employee"), isNull(users.deletedAt)))
+      .returning({
+        id: users.id,
+        name: users.name,
+        role: users.role,
+      });
     return deleted;
   }
 }

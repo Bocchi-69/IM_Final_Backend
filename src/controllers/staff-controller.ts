@@ -47,6 +47,9 @@ export class StaffController {
     const staffId = parseInt(req.params.id as string, 10);
 
     const result = await deleteStaffService(staffId, auth.storeId);
-    return res.status(result.code).send();
+    if (result.code === 204) {
+      return res.status(204).send();
+    }
+    return res.status(result.code).json({ message: result.message });
   };
 }

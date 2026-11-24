@@ -48,7 +48,7 @@ export class AuthMiddleware {
 
     // 4. Verify user still exists in DB (revokes access immediately on staff deletion)
     const user = await this.userRepo.findById(userId);
-    if (!user || user.storeId !== payload.storeId) {
+    if (!user || user.storeId !== payload.storeId || user.deletedAt) {
       return res.status(401).json({
         code: 401,
         status: "error",

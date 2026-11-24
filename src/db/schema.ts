@@ -32,13 +32,15 @@ export const users = pgTable("users", {
   failedPinAttempts: integer("failed_pin_attempts").default(0).notNull(),
   pinLockedUntil: timestamp("pin_locked_until", { withTimezone: true, mode: "string" }),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true, mode: "string" }),
+  deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
 }, (table) => [
   index("user_store_idx").on(table.storeId),
   index("user_email_idx").on(table.email),
   uniqueIndex("users_store_name_uidx")
-    .on(table.storeId, sql`lower(trim(${table.name}))`),
+    .on(table.storeId, sql`lower(trim(${table.name}))`)
+    .where(sql`${table.deletedAt} IS NULL`),
 ]);
 
 // 3. PRODUCTS

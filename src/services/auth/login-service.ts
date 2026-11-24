@@ -10,7 +10,7 @@ export async function loginService(input: LoginInput) {
 
   try {
     const user = await userRepo.findByEmail(input.email);
-    if (!user || !user.password || !(await bcrypt.compare(input.password, user.password))) {
+    if (!user || user.deletedAt || !user.password || !(await bcrypt.compare(input.password, user.password))) {
       return { code: 422, status: "error", message: "Wrong email or password." };
     }
 

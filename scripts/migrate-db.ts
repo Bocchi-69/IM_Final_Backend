@@ -46,12 +46,21 @@ async function runMigration() {
     console.warn("⚠️ Could not create products_store_barcode_idx (may have existing duplicates):", err.message);
   }
 
-  // 4. Add unique index on users (store_id, lower(trim(name)))
+  // 4. Add deleted_at to users
+  console.log("Adding deleted_at to users...");
+  await db.execute(sql`
+    ALTER TABLE users 
+    ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
+  `);
+  console.log("✅ users.deleted_at added/verified");
+
+  // 5. Add unique partial index on users (store_id, lower(trim(name))) where deleted_at is null
   try {
     await db.execute(sql`
+      DROP INDEX IF EXISTS users_store_name_uidx;
       CREATE UNIQUE INDEX IF NOT EXISTS users_store_name_uidx 
       ON users(store_id, lower(trim(name))) 
-      WHERE store_id IS NOT NULL;
+      WHERE store_id IS NOT NULL AND deleted_at IS NULL;
     `);
     console.log("✅ users_store_name_uidx verified");
   } catch (err: any) {
