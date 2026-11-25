@@ -158,6 +158,7 @@ export class ShiftRepository {
         id: shifts.id,
         storeId: shifts.storeId,
         userId: shifts.userId,
+        opening_float: shifts.openingFloat,
         started_at: shifts.startedAt,
         ended_at: shifts.endedAt,
         user: {
@@ -219,15 +220,42 @@ export class ShiftRepository {
       });
     }
 
+    // Get cash drops per shift
+    const dropsList = await db
+      .select({
+        shiftId: cashDrops.shiftId,
+        total: sql<number>`COALESCE(SUM(${cashDrops.amount}), 0)`,
+      })
+      .from(cashDrops)
+      .where(inArray(cashDrops.shiftId, shiftIds))
+      .groupBy(cashDrops.shiftId);
+
+    const dropsMap = new Map<number, number>();
+    for (const d of dropsList) {
+      if (d.shiftId) {
+        dropsMap.set(d.shiftId, parseFloat(String(d.total)));
+      }
+    }
+
     return shiftRows.map((s) => {
       const st = statsMap.get(s.id) || { total: 0, count: 0 };
+      const openingFloat = parseFloat(String(s.opening_float || 500));
+      const salesTotal = st.total;
+      const dropsTotal = dropsMap.get(s.id) || 0;
+      const drawerCash = Math.max(0, Math.round((openingFloat + salesTotal - dropsTotal) * 100) / 100);
+      const overallCash = Math.round((openingFloat + salesTotal) * 100) / 100;
+
       return {
         id: s.id,
         started_at: s.started_at,
         ended_at: s.ended_at,
         user: s.user,
-        total: st.total,
+        opening_float: openingFloat,
+        total: salesTotal,
         sales_count: st.count,
+        cash_drops_total: dropsTotal,
+        drawer_cash: drawerCash,
+        overall_cash: overallCash,
         items: itemsMap.get(s.id) || [],
       };
     });

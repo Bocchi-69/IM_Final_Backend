@@ -23,15 +23,21 @@ export async function getCurrentShiftService(userId: number, storeId: number, ro
     const stats = await shiftRepo.getShiftStats(shift.id, shift.storeId, shift.started_at);
     const recentSales = await shiftRepo.getRecentSales(shift.id, 10);
 
+    const openingFloat = Number(shift.opening_float ?? 500);
+    const drawerCash = Math.max(0, Math.round((stats.total + openingFloat - stats.cash_drops_total) * 100) / 100);
+    const overallCash = Math.round((stats.total + openingFloat) * 100) / 100;
+
     const shiftPayload = {
       id: shift.id,
       started_at: shift.started_at,
       ended_at: shift.ended_at,
-      opening_float: Number(shift.opening_float ?? 500),
+      opening_float: openingFloat,
       user: shift.user,
       total: stats.total,
       sales_count: stats.sales_count,
       cash_drops_total: stats.cash_drops_total,
+      drawer_cash: drawerCash,
+      overall_cash: overallCash,
       recent_sales: recentSales,
     };
 
