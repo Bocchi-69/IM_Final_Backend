@@ -132,6 +132,23 @@ export const stockMovements = pgTable("stock_movements", {
   index("stock_movements_product_idx").on(table.productId),
 ]);
 
+// 7b. PRODUCT BATCHES (FIFO Batch & Price Tracking)
+export const productBatches = pgTable("product_batches", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  productId: integer("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  quantity: integer("quantity").notNull(),
+  initialQuantity: integer("initial_quantity").notNull(),
+  price: numeric("price", { precision: 10, scale: 2 }).notNull(),
+  status: text("status").default("active").notNull(), // 'active' | 'exhausted'
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  index("product_batches_store_idx").on(table.storeId),
+  index("product_batches_product_idx").on(table.productId),
+  index("product_batches_status_idx").on(table.status),
+]);
+
 // 8. CASH DROPS
 export const cashDrops = pgTable("cash_drops", {
   id: serial("id").primaryKey(),

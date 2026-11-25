@@ -1,7 +1,17 @@
-import { eq, and, or, ilike, sql, isNull, asc } from "drizzle-orm";
+import { eq, and, or, ilike, sql, isNull, asc, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { products } from "@/db/schema";
+import { products, productBatches } from "@/db/schema";
 import { ENV } from "@/config/env";
+
+export type BatchEntity = {
+  id: number;
+  product_id: number;
+  quantity: number;
+  initial_quantity: number;
+  price: number;
+  status: string;
+  created_at: string;
+};
 
 export type ProductEntity = {
   id: number;
@@ -15,12 +25,16 @@ export type ProductEntity = {
   price: number;
   stock: number;
   low_stock_threshold: number;
+  batches?: BatchEntity[];
   created_at?: string;
   updated_at?: string;
 };
 
 export class ProductRepository {
-  public formatProduct(p: typeof products.$inferSelect): ProductEntity {
+  public formatProduct(
+    p: typeof products.$inferSelect,
+    batches?: BatchEntity[]
+  ): ProductEntity {
     let imageUrl: string | null = null;
     if (p.imagePath) {
       if (p.imagePath.startsWith("http://") || p.imagePath.startsWith("https://") || p.imagePath.startsWith("data:")) {
@@ -44,6 +58,7 @@ export class ProductRepository {
       price: parseFloat(p.price),
       stock: p.stock,
       low_stock_threshold: p.lowStockThreshold,
+      batches: batches || [],
       created_at: p.createdAt,
       updated_at: p.updatedAt,
     };
@@ -70,7 +85,38 @@ export class ProductRepository {
       .where(condition)
       .orderBy(asc(products.name));
 
-    return rows.map((r) => this.formatProduct(r));
+    if (rows.length === 0) return [];
+
+    const productIds = rows.map((r) => r.id);
+    const batchRows = await db
+      .select()
+      .from(productBatches)
+      .where(
+        and(
+          eq(productBatches.storeId, storeId),
+          inArray(productBatches.productId, productIds),
+          eq(productBatches.status, "active"),
+          sql`${productBatches.quantity} > 0`
+        )
+      )
+      .orderBy(asc(productBatches.id));
+
+    const batchesByProduct = new Map<number, BatchEntity[]>();
+    for (const b of batchRows) {
+      const list = batchesByProduct.get(b.productId) || [];
+      list.push({
+        id: b.id,
+        product_id: b.productId,
+        quantity: b.quantity,
+        initial_quantity: b.initialQuantity,
+        price: parseFloat(b.price),
+        status: b.status,
+        created_at: b.createdAt,
+      });
+      batchesByProduct.set(b.productId, list);
+    }
+
+    return rows.map((r) => this.formatProduct(r, batchesByProduct.get(r.id) || []));
   }
 
   async findById(id: number, storeId: number): Promise<ProductEntity | null> {
@@ -80,7 +126,32 @@ export class ProductRepository {
       .where(and(eq(products.id, id), eq(products.storeId, storeId), isNull(products.deletedAt)))
       .limit(1);
 
-    return row ? this.formatProduct(row) : null;
+    if (!row) return null;
+
+    const batchRows = await db
+      .select()
+      .from(productBatches)
+      .where(
+        and(
+          eq(productBatches.storeId, storeId),
+          eq(productBatches.productId, id),
+          eq(productBatches.status, "active"),
+          sql`${productBatches.quantity} > 0`
+        )
+      )
+      .orderBy(asc(productBatches.id));
+
+    const batches: BatchEntity[] = batchRows.map((b) => ({
+      id: b.id,
+      product_id: b.productId,
+      quantity: b.quantity,
+      initial_quantity: b.initialQuantity,
+      price: parseFloat(b.price),
+      status: b.status,
+      created_at: b.createdAt,
+    }));
+
+    return this.formatProduct(row, batches);
   }
 
   async lookup(storeId: number, code: string): Promise<ProductEntity | null> {
@@ -177,6 +248,17 @@ export class ProductRepository {
         lowStockThreshold: data.lowStockThreshold ?? 5,
       })
       .returning();
+
+    if (data.stock > 0) {
+      await db.insert(productBatches).values({
+        storeId: data.storeId,
+        productId: row.id,
+        quantity: data.stock,
+        initialQuantity: data.stock,
+        price: String(data.price),
+        status: "active",
+      });
+    }
 
     return this.formatProduct(row);
   }

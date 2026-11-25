@@ -1,6 +1,6 @@
-import { eq, and, gte, lte, inArray, desc, sql } from "drizzle-orm";
+import { eq, and, gte, lte, inArray, desc, sql, asc } from "drizzle-orm";
 import { db } from "@/db";
-import { sales, saleItems, products, stockMovements } from "@/db/schema";
+import { sales, saleItems, products, stockMovements, productBatches } from "@/db/schema";
 
 export class SaleRepository {
   async recordSale(
@@ -82,6 +82,80 @@ export class SaleRepository {
             updatedAt: new Date().toISOString(),
           })
           .where(and(eq(products.id, pId), eq(products.storeId, storeId)));
+
+        // FIFO deduction from product batches
+        const batches = await tx
+          .select()
+          .from(productBatches)
+          .where(
+            and(
+              eq(productBatches.productId, pId),
+              eq(productBatches.storeId, storeId),
+              eq(productBatches.status, "active"),
+              sql`${productBatches.quantity} > 0`
+            )
+          )
+          .orderBy(asc(productBatches.id))
+          .for("update");
+
+        // If no batches exist for this product (legacy data), create an initial batch for the stock before deduction
+        if (batches.length === 0 && prod.stock > 0) {
+          const [legacyBatch] = await tx
+            .insert(productBatches)
+            .values({
+              storeId,
+              productId: pId,
+              quantity: prod.stock,
+              initialQuantity: prod.stock,
+              price: prod.price,
+              status: "active",
+            })
+            .returning();
+          batches.push(legacyBatch);
+        }
+
+        let needed = qty;
+        for (const b of batches) {
+          if (needed <= 0) break;
+          const take = Math.min(b.quantity, needed);
+          const remainingInBatch = b.quantity - take;
+          const newStatus = remainingInBatch === 0 ? "exhausted" : "active";
+          await tx
+            .update(productBatches)
+            .set({
+              quantity: remainingInBatch,
+              status: newStatus,
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(productBatches.id, b.id));
+          needed -= take;
+        }
+
+        // Check if the old batch was exhausted and if there is a next active batch with a new price!
+        const [nextActiveBatch] = await tx
+          .select()
+          .from(productBatches)
+          .where(
+            and(
+              eq(productBatches.productId, pId),
+              eq(productBatches.storeId, storeId),
+              eq(productBatches.status, "active"),
+              sql`${productBatches.quantity} > 0`
+            )
+          )
+          .orderBy(asc(productBatches.id))
+          .limit(1);
+
+        if (nextActiveBatch && nextActiveBatch.price !== prod.price) {
+          // Old batch sold out! Automatically transition product price to the next batch's price!
+          await tx
+            .update(products)
+            .set({
+              price: nextActiveBatch.price,
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(products.id, pId));
+        }
 
         // Create sale item
         const [saleItem] = await tx
